@@ -1,0 +1,15 @@
+{
+  "name": "effection-retries",
+  "version": "0.1.0",
+  "author": "Min Kim <minkimcello@gmail.com>",
+  "license": "ISC",
+  "scripts": {
+    "start": "ts-node index.ts"
+  },
+  "dependencies": {
+    "@types/node": "^20.11.16",
+    "effection": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
