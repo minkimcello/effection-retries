@@ -4,27 +4,26 @@ import {
   useAbortSignal,
   sleep,
   race,
+  Callable
 } from "effection";
 
-function* fetchWithRetry() {
+function* retryWithBackoff<T>(fn: () => Callable<T>) {
   let attempt = -1;
 
   while (true) {
-    const signal = yield* useAbortSignal();
-    const response = yield* call(fetch("https://google.com", { signal }));
-
-    if (response.ok) {
-      return yield* call(response.json());
+    try {
+      return yield* call(fn);
+    } catch {
+      let delayMs: number;
+  
+      // https://aws.amazon.com/ru/blogs/architecture/exponential-backoff-and-jitter/
+      const backoff = Math.pow(2, attempt) * 1000;
+      delayMs = Math.round((backoff * (1 + Math.random())) / 2);
+  
+      yield* sleep(delayMs);
+  
+      attempt++;
     }
-    let delayMs: number;
-
-    // https://aws.amazon.com/ru/blogs/architecture/exponential-backoff-and-jitter/
-    const backoff = Math.pow(2, attempt) * 1000;
-    delayMs = Math.round((backoff * (1 + Math.random())) / 2);
-
-    yield* sleep(delayMs);
-
-    attempt++;
   }
 }
 
@@ -35,7 +34,16 @@ function* timeout(duration: number) {
 
 await run(function* () {
   const result = yield* race([
-    fetchWithRetry(),
+    retryWithBackoff(function* () {
+      const signal = yield* useAbortSignal();
+      const response = yield* call(fetch("https://google.com", { signal }));
+  
+      if (response.ok) {
+        return yield* call(response.json());
+      } else {
+        throw new Error(response.statusText)
+      }
+    }),
     timeout(60_000),
   ])
   console.log(result);
