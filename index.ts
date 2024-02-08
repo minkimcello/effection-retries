@@ -108,34 +108,24 @@ const SCENARIO = scenarios.twoTwoFails;
 
 console.log(SCENARIO)
 
-main(function* () {
-  yield* action(function* (resolve) {
-    let timeoutId = setTimeout(() => {
-      console.log('timeout')
-      resolve();
-    }, TIMEOUT);
+function* fetchWithRetry() {
+  let retries = -1;
+  let sequence = 0;
 
-    let retries = 2;
-    let retries_500 = 5;
-    let sequence = 0;
-
-    while (retries > 0 && retries_500 > 0) {
-      if (!SCENARIO[sequence]) {
-        throw new Error("Ran out of fetch scenarios")
-      }
-      const response = yield* fetch(SCENARIO[sequence]);
-      if (response.ok) {
-        console.log('success')
-        clearTimeout(timeoutId);
-        break;
-      }
-      sequence++;
-      if (response.status >= 500) {
-        retries_500--;
-      } else {
-        retries--;
-      }
+  while (true) {
+    if (!SCENARIO[sequence]) {
+      throw new Error("Ran out of fetch scenarios")
     }
-    resolve();
-  })
+    const response = yield* fetch(SCENARIO[sequence]);
+    if (response.ok) {
+      return response;
+    }
+    sequence++;
+    retries++;
+  }
+}
+
+main(function* () {
+  const result = yield* fetchWithRetry();
+  console.log(result);
 });
