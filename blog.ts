@@ -1,56 +1,54 @@
 import {
-  run,
+  main,
   call,
   useAbortSignal,
   sleep,
   race,
-  Callable
+  Operation,
 } from "effection";
 
-function* retryWithBackoff<T>(fn: () => Callable<T>) {
-  let attempt = -1;
-
-  while (true) {
-    try {
-      return yield* call(fn);
-    } catch {
-      let delayMs: number;
+function* retryWithBackoff<T>(fn: () => Operation<T>, options: { timeout: number }) {
+  function* body() {
+    let attempt = -1;
   
-      // https://aws.amazon.com/ru/blogs/architecture/exponential-backoff-and-jitter/
-      const backoff = Math.pow(2, attempt) * 1000;
-      delayMs = Math.round((backoff * (1 + Math.random())) / 2);
-  
-      yield* sleep(delayMs);
-  
-      attempt++;
+    while (true) {
+      try {
+        return yield* fn();
+      } catch {
+        let delayMs: number;
+    
+        // https://aws.amazon.com/ru/blogs/architecture/exponential-backoff-and-jitter/
+        const backoff = Math.pow(2, attempt) * 1000;
+        delayMs = Math.round((backoff * (1 + Math.random())) / 2);
+    
+        yield* sleep(delayMs);
+    
+        attempt++;
+      }
     }
   }
-}
-
-function* timeout(duration: number) {
-  yield* sleep(duration);
-  throw new Error("reached timeout");
-}
-
-await run(function* () {
-  const result = yield* race([
-    retryWithBackoff(function* () {
-      const signal = yield* useAbortSignal();
-      const response = yield* call(fetch("https://google.com", { signal }));
-  
-      if (response.ok) {
-        return yield* call(response.json());
-      } else {
-        throw new Error(response.statusText)
-      }
-    }),
-    timeout(60_000),
+  return race([
+    body(),
+    sleep(options.timeout)
   ])
+}
+
+await main(function* () {
+  const result = yield* retryWithBackoff(function* () {
+    const signal = yield* useAbortSignal();
+    const response = yield* call(fetch("https://google.com", { signal }));
+
+    if (response.ok) {
+      return yield* call(response.json());
+    } else {
+      throw new Error(response.statusText)
+    }
+  }, {
+    timeout: 60000,
+  });
   console.log(result);
 });
 
-
-// 6. let's start at retries -1 and go up to maxTimeout
 
 /*
   1. fetch call using effection
