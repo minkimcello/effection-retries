@@ -1,7 +1,7 @@
 import {
   main,
-  action,
   sleep,
+  race,
   Operation,
 } from "effection";
 
@@ -11,12 +11,10 @@ interface Response {
   ok: boolean;
 }
 
-function fetch(response: Response): Operation<Response> {
-  return action(function* (resolve) {
-    console.log('sleeping', response.duration)
-    yield* sleep(response.duration);
-    resolve(response);
-  });
+function* fetch2(response: Response): Operation<Response> {
+  console.log('sleeping', response.duration)
+  yield* sleep(response.duration);
+  return response;
 }
 
 const scenarios = {
@@ -27,105 +25,56 @@ const scenarios = {
       ok: true,
     },
   ],
-  tooLong: [
-    {
-      duration: 2_500,
-      status: 200,
-      ok: true,
-    },
-  ],
-  twoClientFails: [
-    {
-      duration: 0,
-      status: 400,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 400,
-      ok: false,
-    },
-  ],
-  fiveServerFails: [
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-  ],
-  twoTwoFails: [
-    {
-      duration: 0,
-      status: 400,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 500,
-      ok: false,
-    },
-    {
-      duration: 0,
-      status: 400,
-      ok: false,
-    },
-  ],
 }
 
 // **********
-const TIMEOUT = 2_000;
-// const SCENARIO = scenarios.successOnFirstTry;
-// const SCENARIO = scenarios.tooLong;
-// const SCENARIO = scenarios.twoClientFails;
-// const SCENARIO = scenarios.fiveServerFails;
-const SCENARIO = scenarios.twoTwoFails;
+const SCENARIO = scenarios.successOnFirstTry;
 // **********
 
 console.log(SCENARIO)
 
-function* fetchWithRetry() {
-  let retries = -1;
-  let sequence = 0;
+function* doesNotLog() {
+  console.log('hi')
+}
 
-  while (true) {
-    if (!SCENARIO[sequence]) {
-      throw new Error("Ran out of fetch scenarios")
+function* retryWithBackoff<T>(fn: (attempt: number) => Operation<T>, options: { timeout: number }) {
+  function* body() {
+    let attempt = -1;
+  
+    while (true) {
+      try {
+        return yield* fn(attempt);
+      } catch {
+        let delayMs: number;
+    
+        // https://aws.amazon.com/ru/blogs/architecture/exponential-backoff-and-jitter/
+        const backoff = Math.pow(2, attempt) * 1000;
+        delayMs = Math.round((backoff * (1 + Math.random())) / 2);
+    
+        yield* sleep(delayMs);
+    
+        attempt++;
+      }
     }
-    const response = yield* fetch(SCENARIO[sequence]);
-    if (response.ok) {
-      return response;
-    }
-    sequence++;
-    retries++;
   }
+  return race([
+    doesNotLog(),
+    body(),
+    sleep(options.timeout),
+  ])
 }
 
 main(function* () {
-  const result = yield* fetchWithRetry();
+  const result = yield* retryWithBackoff(function* (attempt) {
+    const response = yield* fetch2(SCENARIO[attempt + 1]);
+
+    if (response.ok) {
+      return;
+    } else {
+      throw new Error(`${response.status}`);
+    }
+  }, {
+    timeout: 60000,
+  });
   console.log(result);
 });
