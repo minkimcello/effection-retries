@@ -43,8 +43,10 @@ function* retryWithBackoff<T>(fn: (attempt: number) => Operation<T>, options: { 
   
     while (true) {
       try {
-        return yield* fn(attempt);
-      } catch {
+        const result = yield* fn(attempt);
+        console.log("returning")
+        return result;
+      } catch (e) {
         let delayMs: number;
     
         // https://aws.amazon.com/ru/blogs/architecture/exponential-backoff-and-jitter/
@@ -57,7 +59,8 @@ function* retryWithBackoff<T>(fn: (attempt: number) => Operation<T>, options: { 
       }
     }
   }
-  return race([
+
+  return yield* race([
     doesNotLog(),
     body(),
     sleep(options.timeout),
